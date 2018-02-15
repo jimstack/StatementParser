@@ -5,30 +5,23 @@
  */
 package stack.statementparser;
 
+import java.text.NumberFormat;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import javafx.beans.property.ReadOnlyListProperty;
-import javafx.beans.property.ReadOnlyListWrapper;
-import javafx.collections.FXCollections;
+import java.util.Locale;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
-import static stack.statementparser.DateFormats.MONTH_DAY_YEAR_FORMAT;
-import static stack.statementparser.DateFormats.MONTH_DAY_FORMAT;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  *
  * @author jimst
  */
-public class BankStatement
+public class BankStatement extends Statement
 {
-    private String fileName;
+    private static final NumberFormat NUMBER_FORMAT = NumberFormat.getInstance(Locale.US);
     
-    private String accountNumber;
-    private Date startDate;
-    private Date endDate;
-    
-    private final ReadOnlyListWrapper<Transaction> allTransactions;
     private final ObservableList<Transaction> unknownTransactions;
     private final ObservableList<Transaction> depositTransactions;
     private final ObservableList<Transaction> atmWithdrawalTransactions;
@@ -44,92 +37,169 @@ public class BankStatement
     
     public BankStatement(String fileName)
     {
-        this.fileName = fileName;
+        super(fileName);
         
-        ObservableList<Transaction> backingList = FXCollections.observableArrayList();
-        allTransactions = new ReadOnlyListWrapper<>(this, 
-                                                    "allTransactions", 
-                                                    backingList);
-        unknownTransactions = new FilteredList<>(allTransactions,
+        unknownTransactions = new FilteredList<>(allTransactionsProperty(),
                                                  t -> t.getTransactionType() == TransactionType.UNKNOWN);
-        depositTransactions = new FilteredList<>(allTransactions,
+        depositTransactions = new FilteredList<>(allTransactionsProperty(),
                                                  t -> t.getTransactionType() == TransactionType.DEPOSIT);
-        atmWithdrawalTransactions = new FilteredList<>(allTransactions,
+        atmWithdrawalTransactions = new FilteredList<>(allTransactionsProperty(),
                                                        t -> t.getTransactionType() == TransactionType.ATM_WITHDRAWAL);
-        transferInTransactions = new FilteredList<>(allTransactions,
+        transferInTransactions = new FilteredList<>(allTransactionsProperty(),
                                                     t -> t.getTransactionType() == TransactionType.TRANSFER_IN);
-        transferOutTransactions = new FilteredList<>(allTransactions,
+        transferOutTransactions = new FilteredList<>(allTransactionsProperty(),
                                                      t -> t.getTransactionType() == TransactionType.TRANSFER_OUT);
-        checkTransactions = new FilteredList<>(allTransactions,
+        checkTransactions = new FilteredList<>(allTransactionsProperty(),
                                                t -> t.getTransactionType() == TransactionType.CHECK);
-        onlinePaymentTransactions = new FilteredList<>(allTransactions,
+        onlinePaymentTransactions = new FilteredList<>(allTransactionsProperty(),
                                                        t -> t.getTransactionType() == TransactionType.ONLINE_PAYMENT);
     }
-
-    public String getAccountNumber()
-    {
-        return accountNumber;
-    }
-
-    public void setAccountNumber(String accountNumber)
-    {
-        this.accountNumber = accountNumber;
-    }
-
-    public String getStartDate()
-    {
-        return MONTH_DAY_YEAR_FORMAT.format(startDate);
-    }
-
-    public void setStartDate(String startDate) throws ParseException
-    {
-        this.startDate = MONTH_DAY_YEAR_FORMAT.parse(startDate);
-    }
-
-    public String getEndDate()
-    {
-        return MONTH_DAY_YEAR_FORMAT.format(endDate);
-    }
-
-    public void setEndDate(String endDate) throws ParseException
-    {
-        this.endDate = MONTH_DAY_YEAR_FORMAT.parse(endDate);
-    }
     
-    public String getFullDate(String monthAndDay) throws ParseException
+    public double getAllDeposits()
     {
-        if (null == startDate || null == endDate)
+        double sum = 0.0;
+        for (Transaction transaction : depositTransactions)
         {
-            return monthAndDay;
+            double amount = 0.0;
+            try
+            {
+                amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+            }
+            catch (ParseException ex)
+            {
+                Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            sum += amount;
         }
         
-        Date date = MONTH_DAY_FORMAT.parse(monthAndDay);
-        if (date.getMonth() < startDate.getMonth())
-        {
-            // Year rollover
-            date.setYear(endDate.getYear());
-        }
-        else
-        {
-            date.setYear(startDate.getYear());
-        }
-        
-        return MONTH_DAY_YEAR_FORMAT.format(date);
-    }
-
-    public String getFileName()
-    {
-        return fileName;
+        return sum;
     }
     
-    public void addTransaction(Transaction transaction)
+    public double getJuliaSalaryDeposits()
     {
-        allTransactions.add(transaction);
+        double sum = 0.0;
+        for (Transaction transaction : depositTransactions)
+        {
+            if (StringUtils.containsIgnoreCase(transaction.getDescription(), "direct dep rdc vet"))
+            {
+                double amount = 0.0;
+                try
+                {
+                    amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+                }
+                catch (ParseException ex)
+                {
+                    Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                sum += amount;
+            }
+        }
+        
+        return sum;
     }
-
-    public ReadOnlyListProperty<Transaction> getAllTransactions()
+    
+    public double getJimSalaryDeposits()
     {
-        return allTransactions.getReadOnlyProperty();
+        double sum = 0.0;
+        for (Transaction transaction : depositTransactions)
+        {
+            if (StringUtils.containsIgnoreCase(transaction.getDescription(), "payroll remcom") ||
+                StringUtils.containsIgnoreCase(transaction.getDescription(), "direct dep commnet"))
+            {
+                double amount = 0.0;
+                try
+                {
+                    amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+                }
+                catch (ParseException ex)
+                {
+                    Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+                }
+                sum += amount;
+            }
+        }
+        
+        return sum;
+    }
+    
+    public double getAtmWithdrawals()
+    {
+        double sum = 0.0;
+        for (Transaction transaction : atmWithdrawalTransactions)
+        {
+            double amount = 0.0;
+            try
+            {
+                amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+            }
+            catch (ParseException ex)
+            {
+                Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            sum += amount;
+        }
+        
+        return sum;
+    }
+    
+    public double getOnlinePayments()
+    {
+        double sum = 0.0;
+        for (Transaction transaction : onlinePaymentTransactions)
+        {
+            double amount = 0.0;
+            try
+            {
+                amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+            }
+            catch (ParseException ex)
+            {
+                Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            sum += amount;
+        }
+        
+        return sum;
+    }    
+    
+    public double getTransferredIn()
+    {
+        double sum = 0.0;
+        for (Transaction transaction : transferInTransactions)
+        {
+            double amount = 0.0;
+            try
+            {
+                amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+            }
+            catch (ParseException ex)
+            {
+                Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            sum += amount;
+        }
+        
+        return sum;
+    }
+    
+    public double getTransferredOut()
+    {
+        double sum = 0.0;
+        for (Transaction transaction : transferOutTransactions)
+        {
+            double amount = 0.0;
+            try
+            {
+                amount = NUMBER_FORMAT.parse(transaction.getAmount()).doubleValue();
+            }
+            catch (ParseException ex)
+            {
+                Logger.getLogger(BankStatement.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            sum += amount;
+        }
+        
+        return sum;
     }
 
     public ObservableList<Transaction> getUnknownTransactions()

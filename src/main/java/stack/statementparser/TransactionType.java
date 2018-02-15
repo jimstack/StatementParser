@@ -27,7 +27,8 @@ public enum TransactionType
     TRANSFER_OUT, 
     ONLINE_PAYMENT,
     DIRECT_PAYMENT,
-    TELLER_WITHDRAWAL;
+    TELLER_WITHDRAWAL,
+    REFUND;
     
     public static final EnumSet<TransactionType> purchases = EnumSet.of(CREDIT_CARD_PURCHASE, DEBIT_CARD_PURCHASE, ONLINE_PAYMENT, DIRECT_PAYMENT);
     

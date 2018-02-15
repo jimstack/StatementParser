@@ -7,10 +7,13 @@ package stack.statementparser;
 
 import java.io.File;
 import java.io.IOException;
+import java.text.NumberFormat;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -18,9 +21,8 @@ import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.apache.pdfbox.text.PDFTextStripperByArea;
-import static stack.statementparser.DateFormats.MONTH_DAY_YEAR_FORMAT;
 import static stack.statementparser.DateFormats.MONTH_DAY_FORMAT;
+import static stack.statementparser.DateFormats.MONTH_DAY_FULL_YEAR_FORMAT;
 
 /**
  *
@@ -29,29 +31,37 @@ import static stack.statementparser.DateFormats.MONTH_DAY_FORMAT;
 public class PncStatementParser
 {
     private static final Pattern ALL_WHITESPACE_PATTERN = Pattern.compile("\\s+");
+    private static final NumberFormat NUMBER_FORMAT = NumberFormat.getInstance(Locale.US);
+    
+    public static Set<String> accountNumbers = new HashSet<>();
+    
+    private static void addAccountNumber(String accountNumber, String line)
+    {
+        if (!accountNumbers.contains(accountNumber))
+        {
+//            System.out.println(accountNumber + " seen: " + line);
+            accountNumbers.add(accountNumber);
+        }
+    }
 
     public static BankStatement parse(String fileName)
     {
         System.out.println("Parsing: " + fileName);
         BankStatement statement = new BankStatement(fileName);
         RawSection header = new RawSection("Header"),
+                   balanceSummary = new RawSection("Balance Summary"),
                    deposits = new RawSection("Desposits"),
                    checks = new RawSection("Checks"),
                    withdrawals = new RawSection("Withdrawals and Purchases"),
                    online = new RawSection("Online Payments and Transfers"),
                    otherDeductions = new RawSection("Other Deductions"),
-                   balanceSummary = new RawSection("Daily Balance Summary");
+                   dailyBalanceDetail = new RawSection("Daily Balance Summary");
 
         RawSection currentSection = header;
         try (PDDocument document = PDDocument.load(new File(fileName)))
         {
-            document.getClass();
-
             if (!document.isEncrypted())
-            {
-                PDFTextStripperByArea stripper = new PDFTextStripperByArea();
-                stripper.setSortByPosition(true);
-
+            {            
                 PDFTextStripper tStripper = new PDFTextStripper();
 
                 String pdfFileInText = tStripper.getText(document);
@@ -61,14 +71,32 @@ public class PncStatementParser
                 String lines[] = pdfFileInText.split("\\r?\\n");
                 for (String line : lines)
                 {
+                    if (StringUtils.containsIgnoreCase(line, "transfer"))
+                    {
+                        String words[] = line.split(" ");
+                        if (words.length > 0)
+                        {
+                            addAccountNumber(words[words.length-1], line);
+                        }
+                    }
+                    String words[] = line.split(" ");
+                    for (String word : words)
+                    {
+                        if (word.length() > 15)
+                        {
+                            addAccountNumber(word, line);
+                        }
+                    }
+//                    System.out.println(line);
+                    
                     if (StringUtils.containsIgnoreCase(line, "deposits and other additions"))
                     {
                         currentSection = deposits;
 //                        System.out.println("Loading " + currentSection.getName());
                     }
-                    else if (StringUtils.containsIgnoreCase(line, "deposits and other additions"))
+                    else if (StringUtils.equalsIgnoreCase(line, "balance summary"))
                     {
-                        currentSection = deposits;
+                        currentSection = balanceSummary;
 //                        System.out.println("Loading " + currentSection.getName());
                     }
                     else if (StringUtils.containsIgnoreCase(line, "checks and substitute checks"))
@@ -93,7 +121,7 @@ public class PncStatementParser
                     }
                     else if (StringUtils.containsIgnoreCase(line, "daily balance detail"))
                     {
-                        currentSection = balanceSummary;
+                        currentSection = dailyBalanceDetail;
 //                        System.out.println("Loading " + currentSection.getName());
                     }
 
@@ -108,12 +136,15 @@ public class PncStatementParser
         }
                 
         parseHeader(statement, header);
+        parseBalanceSummary(statement, balanceSummary);
         parseDeposits(statement, deposits);
 //                parseChecks(statement, checks);
         parseWithdrawalsAndPurchases(statement, withdrawals);
         parseOnlinePaymentsAndTransfers(statement, online);
         parseOtherDeductions(statement, otherDeductions);
 
+//        System.out.println("\n***************************************************************");
+//        System.out.println("***************************************************************\n");
         return statement;
     }
     
@@ -141,7 +172,7 @@ public class PncStatementParser
                 {
                     try
                     {
-                        MONTH_DAY_YEAR_FORMAT.parse(parts[i]);
+                        MONTH_DAY_FULL_YEAR_FORMAT.parse(parts[i]);
                         dates.add(parts[i]);
                     }
                     catch (ParseException ex)
@@ -154,9 +185,6 @@ public class PncStatementParser
 //                {
 //                    throw(new UnsupportedOperationException("Incorrect number of dates found: " + line));
 //                }
-
-if (dates.size() == 2)
-{
                 try 
                 {
                     statement.setStartDate(dates.get(0));
@@ -176,8 +204,6 @@ if (dates.size() == 2)
                 }
                 
                 timePeriodFound = true;
-}
-//                System.out.println("Period: " + statement.getStartDate() + " to " + statement.getEndDate());
             }                
         }
     }
@@ -201,6 +227,37 @@ if (dates.size() == 2)
                 transaction.setTransactionType(TransactionType.DEPOSIT);
             }
             statement.addTransaction(transaction);
+        }
+    }
+    
+    private static void parseBalanceSummary(BankStatement statement, RawSection section)
+    {
+//        System.out.println("Parsing " + section.getName());
+        
+        for (String line : section.getLines())
+        {
+            try
+            {
+                NUMBER_FORMAT.parse(line);
+            }
+            catch (ParseException ex)
+            {
+                // Not the line we want
+                continue;
+            }
+            
+            String[] parts = ALL_WHITESPACE_PATTERN.split(line);
+            try
+            {
+                statement.setBeginningBalance(NUMBER_FORMAT.parse(parts[0]).doubleValue());
+                statement.setEndingBalance(NUMBER_FORMAT.parse(parts[3]).doubleValue());
+                
+                return;
+            }
+            catch (ParseException ex)
+            {
+                // Not the line we want
+            }
         }
     }
     
@@ -287,7 +344,7 @@ if (dates.size() == 2)
                 transaction.setTransactionType(TransactionType.DIRECT_PAYMENT);
             }
             else if (StringUtils.containsIgnoreCase(transaction.getDescription(), "transfer to"))
-            {
+            {                
                 transaction = new Transfer(transaction);
                 transaction.setTransactionType(TransactionType.TRANSFER_OUT);
                 
@@ -395,6 +452,11 @@ if (dates.size() == 2)
             {
                 description += parts[i];
                 description += " ";
+            }
+            
+            if (parts.length < 2)
+            {
+                continue;
             }
             
             String date = "UNKNOWN";

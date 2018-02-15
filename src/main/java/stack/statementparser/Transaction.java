@@ -55,4 +55,10 @@ public class Transaction
     {
         return description;
     }
+    
+    @Override
+    public String toString()
+    {
+        return date + " " + description + " " + amount;
+    }
 }
